@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.env
+
+# 运行时缓存（封面图等衍生数据）
+.cache/
+
+# 本地配置（含本机游戏路径，每个用户自定义）
+config.json
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
