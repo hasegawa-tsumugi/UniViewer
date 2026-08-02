@@ -2,7 +2,7 @@
 """
 UniViewer - CHUNITHM Data Browser
 Native desktop application using pywebview + Python HTTP server
-Version: 0.0.1
+Version: 0.0.1.alpha.1
 """
 
 import os
@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 # Constants
 # ============================================================
 APP_NAME = "UniViewer"
-APP_VERSION = "0.0.1"
+APP_VERSION = "0.0.1.alpha.1"
 DEFAULT_GAME_PATH = r"D:\SDHD_2.50"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")

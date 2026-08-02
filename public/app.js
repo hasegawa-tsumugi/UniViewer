@@ -12,7 +12,7 @@ const state = {
   totalPages: 1,
   selectedId: null,
   selectedDetail: null,
-  settings: { game_data_path: '', language: 'zh-CN', app_version: '0.0.1', game_version: '' },
+  settings: { game_data_path: '', language: 'zh-CN', app_version: '0.0.1.alpha.1', game_version: '' },
   sources: [],
   options: { genres: [], releaseTags: [] },
   sortBy: 'id',
@@ -931,7 +931,7 @@ async function init() {
   const options = await api('/api/options');
   if (!options.error) state.options = options;
 
-  document.getElementById('sb-version').textContent = 'v' + (state.settings.app_version || '0.0.1');
+  document.getElementById('sb-version').textContent = 'v' + (state.settings.app_version || '0.0.1.alpha.1');
 
   setupEvents();
   applyI18n();
