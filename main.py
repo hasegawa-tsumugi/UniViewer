@@ -20,9 +20,20 @@ import xml.etree.ElementTree as ET
 APP_NAME = "UniViewer"
 APP_VERSION = "0.0.1.alpha.1"
 DEFAULT_GAME_PATH = r"D:\SDHD_2.50"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
-PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+
+# When running as a PyInstaller bundle, sys._MEIPASS points to the
+# temporary directory where bundled read-only resources are extracted.
+# When running as a normal script, fall back to the script's directory.
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    _BUNDLE_DIR = sys._MEIPASS          # read-only resources (public/)
+    _EXE_DIR = os.path.dirname(sys.executable)  # writable dir (config, cache)
+else:
+    _BUNDLE_DIR = os.path.dirname(os.path.abspath(__file__))
+    _EXE_DIR = _BUNDLE_DIR
+
+CONFIG_PATH = os.path.join(_EXE_DIR, "config.json")
+PUBLIC_DIR = os.path.join(_BUNDLE_DIR, "public")
+CACHE_DIR = os.path.join(_EXE_DIR, ".cache")
 HOST = "127.0.0.1"
 PORT = 17890
 
@@ -729,7 +740,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.send_error(404)
                     return
                 cache_key = f"cover_{dds_path}_{mtime}"
-                cache_dir = os.path.join(BASE_DIR, ".cache", "covers")
+                cache_dir = os.path.join(CACHE_DIR, "covers")
                 cache_png = os.path.join(cache_dir, source, music_id + ".png")
                 if not os.path.exists(cache_png) or os.path.getmtime(cache_png) < mtime:
                     try:
