@@ -19,10 +19,10 @@ For Each p In pythonPaths
 Next
 
 If pythonExe = "" Then
-    MsgBox "找不到 pythonw.exe。" & vbCrLf & vbCrLf & _
-           "请确保 Python 3.11+ 已安装，或者将 pythonw.exe 所在目录加入系统 PATH。" & vbCrLf & vbCrLf & _
-           "已尝试的路径：" & vbCrLf & _
-           Join(pythonPaths, vbCrLf), vbCritical, "UniViewer 启动失败"
+    MsgBox "�Ҳ��� pythonw.exe��" & vbCrLf & vbCrLf & _
+           "��ȷ�� Python 3.11+ �Ѱ�װ�����߽� pythonw.exe ����Ŀ¼����ϵͳ PATH��" & vbCrLf & vbCrLf & _
+           "�ѳ��Ե�·����" & vbCrLf & _
+           Join(pythonPaths, vbCrLf), vbCritical, "UniViewer ����ʧ��"
     WScript.Quit 1
 End If
 
@@ -32,9 +32,9 @@ scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Dim mainPy
 mainPy = scriptDir & "\main.py"
 If Not fso.FileExists(mainPy) Then
-    MsgBox "找不到 main.py。" & vbCrLf & vbCrLf & _
-           "期望路径：" & mainPy & vbCrLf & vbCrLf & _
-           "请确保 start.vbs 与 main.py 在同一目录下。", vbCritical, "UniViewer 启动失败"
+    MsgBox "�Ҳ��� main.py��" & vbCrLf & vbCrLf & _
+           "����·����" & mainPy & vbCrLf & vbCrLf & _
+           "��ȷ�� start.vbs �� main.py ��ͬһĿ¼�¡�", vbCritical, "UniViewer ����ʧ��"
     WScript.Quit 1
 End If
 
