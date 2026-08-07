@@ -2,7 +2,7 @@
 """
 UniViewer - CHUNITHM Data Browser
 Native desktop application using pywebview + Python HTTP server
-Version: 0.0.1.alpha.1
+Version: 0.0.2.alpha.1
 """
 
 import os
@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 # Constants
 # ============================================================
 APP_NAME = "UniViewer"
-APP_VERSION = "0.0.1.alpha.1"
+APP_VERSION = "0.0.2.alpha.1"
 DEFAULT_GAME_PATH = r"D:\SDHD_2.50"
 
 # When running as a PyInstaller bundle, sys._MEIPASS points to the
@@ -538,12 +538,50 @@ class DataLoader:
         except Exception as e:
             return {"error": str(e)}
 
+    # --- Character Save ---
+    def save_character(self, source, chara_id, fields):
+        """Save character data back to Chara.xml"""
+        source_path = self.get_source_path(source)
+        chara_dir = os.path.join(source_path, "chara", chara_id)
+        xml_path = os.path.join(chara_dir, "Chara.xml")
+        if not os.path.exists(xml_path):
+            return {"error": "Chara.xml not found"}
+
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+
+            if "name" in fields:
+                set_xstr(root, "name", fields["name"])
+            if "sortName" in fields:
+                set_xval(root, "sortName", fields["sortName"])
+            if "illustratorName" in fields:
+                set_xstr(root, "illustratorName", fields["illustratorName"])
+            if "worksName" in fields:
+                set_xstr(root, "works", fields["worksName"])
+            if "releaseTagName" in fields:
+                rt_node = root.find("releaseTagName")
+                if rt_node is not None:
+                    s = rt_node.find("str")
+                    if s is None:
+                        s = ET.SubElement(rt_node, "str")
+                    s.text = fields["releaseTagName"]
+
+            tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+            self.clear_cache()
+            return {"status": "ok"}
+        except Exception as e:
+            return {"error": str(e)}
+
     # --- Characters ---
     def get_characters(self):
         def parser(root):
             return {
                 "name": xstr(root, "name"),
+                "sortName": xval(root, "sortName"),
                 "worksName": xstr(root, "works"),
+                "illustratorName": xstr(root, "illustratorName"),
+                "releaseTagName": xstr(root, "releaseTagName"),
                 "rareType": xval(root, "rareType"),
                 "defaultImages": xstr(root, "defaultImages"),
                 "sub": "character",
@@ -636,6 +674,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.end_headers()
             self.wfile.write(body)
         except FileNotFoundError:
@@ -864,6 +905,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 music_id = data.get("music_id", "")
                 fields = data.get("fields", {})
                 result = self.loader.save_chart(source, music_id, fields)
+                code = 200 if "status" in result else 400
+                self._send_json(result, code)
+            except Exception as e:
+                self._send_json({"error": str(e)}, 400)
+            return
+
+        if path == "/api/save/character":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                data = json.loads(body)
+                source = data.get("source", "")
+                chara_id = data.get("chara_id", "")
+                fields = data.get("fields", {})
+                result = self.loader.save_character(source, chara_id, fields)
                 code = 200 if "status" in result else 400
                 self._send_json(result, code)
             except Exception as e:

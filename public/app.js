@@ -12,7 +12,7 @@ const state = {
   totalPages: 1,
   selectedId: null,
   selectedDetail: null,
-  settings: { game_data_path: '', language: 'zh-CN', app_version: '0.0.1.alpha.1', game_version: '' },
+  settings: { game_data_path: '', language: 'zh-CN', app_version: '0.0.2.alpha.1', game_version: '' },
   sources: [],
   options: { genres: [], releaseTags: [] },
   sortBy: 'id',
@@ -41,6 +41,7 @@ const I18N = {
     basic: 'Basic', advanced: 'Advanced', expert: 'Expert', master: 'Master', ultima: 'Ultima', worldsEnd: "World's End",
     enableDiff: '启用此难度',
     name: '名称', sortName: '排序名', artist: '作者', genre: '流派', worksName: '作品',
+    illustratorName: '画师', releaseTagName: '版本',
     versionCat: '版本分类', releaseTag: '发行版本', version: '版本',
     releaseDate: '发布日期', cueFile: '音频文件', stageName: '舞台',
     jacketFile: '封面文件', enableUltima: '启用Ultima', firstLock: '初始锁定',
@@ -171,27 +172,37 @@ function updateSubNav() {
 }
 
 function updateSourceSelect() {
-  const sel = document.getElementById('source-select');
-  if (!sel) return;
+  const inner = document.getElementById('source-dropdown-inner');
+  const label = document.getElementById('source-card-label');
+  const card = document.getElementById('source-card');
+  if (!inner || !label || !card) return;
 
   if (state.category === 'charts') {
-    sel.style.display = '';
-    sel.innerHTML = '';
-    for (const src of state.sources) {
-      const opt = document.createElement('option');
-      opt.value = src.id;
-      const ver = src.version || '';
-      opt.textContent = ver ? src.id + ' (' + ver + ')' : src.id;
-      if (state.sub === src.id) opt.selected = true;
-      sel.appendChild(opt);
+    card.style.display = '';
+    inner.innerHTML = '';
+    if (!state.sources || state.sources.length === 0) {
+      const item = document.createElement('button');
+      item.className = 'hdr-dropdown-item';
+      item.textContent = 'No data';
+      item.disabled = true;
+      inner.appendChild(item);
+      label.textContent = '–';
+      return;
     }
-    if (state.sources.length === 0) {
-      const opt = document.createElement('option');
-      opt.textContent = 'No data';
-      sel.appendChild(opt);
+    // Find current source label
+    const cur = state.sources.find((s) => s.id === state.sub);
+    label.textContent = cur ? (cur.version ? cur.id + ' (' + cur.version + ')' : cur.id) : (state.sources[0].version ? state.sources[0].id + ' (' + state.sources[0].version + ')' : state.sources[0].id);
+
+    for (const src of state.sources) {
+      const item = document.createElement('button');
+      item.className = 'hdr-dropdown-item';
+      item.textContent = src.version ? src.id + ' (' + src.version + ')' : src.id;
+      item.dataset.source = src.id;
+      if (state.sub === src.id) item.classList.add('active');
+      inner.appendChild(item);
     }
   } else {
-    sel.style.display = 'none';
+    card.style.display = 'none';
   }
 }
 
@@ -323,12 +334,12 @@ function renderItems(items) {
 
       const cover = document.createElement('div');
       cover.className = 'gi-cover';
-      cover.style.background = colorFromId(item.id);
       if (item.defaultImages && item.source) {
         const img = document.createElement('img');
         img.src = '/api/chara_img/' + item.source + '/' + item.defaultImages + '/02';
         img.alt = '';
         img.loading = 'lazy';
+        img.className = 'gi-img';
         img.onerror = function() { this.style.display = 'none'; };
         cover.appendChild(img);
       } else {
@@ -336,16 +347,21 @@ function renderItems(items) {
       }
       cell.appendChild(cover);
 
+      const info = document.createElement('div');
+      info.className = 'gi-info';
+
       const nm = document.createElement('div');
       nm.className = 'gi-name';
       nm.textContent = item.name || '(unnamed)';
       nm.title = item.name || '';
-      cell.appendChild(nm);
+      info.appendChild(nm);
 
       const id = document.createElement('div');
       id.className = 'gi-id';
       id.textContent = item.id + (item.rareType && item.rareType !== '0' ? ' · R' + item.rareType : '');
-      cell.appendChild(id);
+      info.appendChild(id);
+
+      cell.appendChild(info);
 
       cell.addEventListener('click', () => selectItem(item));
       grid.appendChild(cell);
@@ -656,18 +672,53 @@ async function saveChart() {
   }
 }
 
+async function saveCharacter() {
+  const pane = document.getElementById('detail-content');
+  const item = state.selectedDetail;
+  if (!item) return;
+
+  const fields = {};
+  pane.querySelectorAll('[data-field]').forEach((el) => {
+    fields[el.dataset.field] = el.value;
+  });
+
+  const result = await api('/api/save/character', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source: item.source,
+      chara_id: item.id,
+      fields: fields,
+    }),
+  });
+
+  if (result.error) {
+    showToast(result.error);
+  } else {
+    showToast(t('saveOk'));
+    await api('/api/refresh', { method: 'POST' });
+    loadData();
+  }
+}
+
 function renderCharacterDetail(item) {
   return `
     <div class="detail-top">
-      <div class="meta-form">
-        <div class="meta-row"><div class="meta-label">${t('name')}</div><div class="meta-value">${esc(item.name || '–')}</div></div>
-        <div class="meta-row"><div class="meta-label">${t('worksName')}</div><div class="meta-value">${esc(item.worksName || '–')}</div></div>
-        <div class="meta-row"><div class="meta-label">${t('rarity')}</div><div class="meta-value">${item.rareType && item.rareType !== '0' ? `<span class="detail-rarity rarity-${item.rareType}">★${item.rareType}</span>` : '–'}</div></div>
-        <div class="meta-row"><div class="meta-label">ID</div><div class="meta-value">${esc(item.id || '–')}</div></div>
+      <div class="meta-form chara-edit-form">
+        <div class="meta-row"><div class="meta-label">${t('name')}</div><div class="meta-value"><input class="chara-input" type="text" data-field="name" value="${escAttr(item.name || '')}" placeholder="–"></div></div>
+        <div class="meta-row"><div class="meta-label">${t('sortName')}</div><div class="meta-value"><input class="chara-input" type="text" data-field="sortName" value="${escAttr(item.sortName || '')}" placeholder="–"></div></div>
+        <div class="meta-row"><div class="meta-label">${t('illustratorName')}</div><div class="meta-value"><input class="chara-input" type="text" data-field="illustratorName" value="${escAttr(item.illustratorName || '')}" placeholder="–"></div></div>
+        <div class="meta-row"><div class="meta-label">${t('worksName')}</div><div class="meta-value"><input class="chara-input" type="text" data-field="worksName" value="${escAttr(item.worksName || '')}" placeholder="–"></div></div>
+        <div class="meta-row"><div class="meta-label">${t('releaseTagName')}</div><div class="meta-value"><input class="chara-input" type="text" data-field="releaseTagName" value="${escAttr(item.releaseTagName || '')}" placeholder="–"></div></div>
+        <div class="meta-row"><div class="meta-label">ID</div><div class="meta-value"><input class="chara-input chara-input-id" type="text" value="${escAttr(item.id || '')}" readonly></div></div>
+        <div class="meta-row chara-save-row">
+          <div class="save-bar">
+            <button class="btn-save" id="btn-save-chara">${t('save')}</button>
+          </div>
+        </div>
       </div>
-      <div class="cover-img" style="background:${colorFromId(item.id)};color:rgba(255,255,255,0.85)">
+      <div class="cover-img">
         ${item.defaultImages && item.source ? `<img class="cover-img-el" src="/api/chara_img/${item.source}/${item.defaultImages}/00" alt="" onerror="this.style.display='none'">` : ''}
-        <span class="cover-fallback-text">${thumbInitials(item)}</span>
       </div>
     </div>
   `;
@@ -727,6 +778,10 @@ document.addEventListener('click', (e) => {
     saveChart();
     return;
   }
+  if (e.target.id === 'btn-save-chara') {
+    saveCharacter();
+    return;
+  }
 
   const tab = e.target.closest('.diff-tab');
   if (tab) {
@@ -747,6 +802,10 @@ document.addEventListener('click', (e) => {
 function esc(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function showToast(msg) {
@@ -783,12 +842,27 @@ function setupEvents() {
     });
   });
 
-  // Source selector
-  document.getElementById('source-select').addEventListener('change', (e) => {
-    if (e.target.value) selectCategory(state.category, e.target.value);
+  // Source card dropdown (custom, matches sort card style)
+  document.getElementById('source-card-main').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown('source-card', 'source-dropdown');
+    // Highlight active source option
+    document.querySelectorAll('#source-dropdown .hdr-dropdown-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.source === state.sub);
+    });
   });
 
-  // Version card dropdown removed - using native select#source-select instead
+  // Source option click (event delegation, since options are dynamic)
+  document.getElementById('source-dropdown-inner').addEventListener('click', (e) => {
+    const btn = e.target.closest('.hdr-dropdown-item');
+    if (!btn || !btn.dataset.source) return;
+    e.stopPropagation();
+    const newSource = btn.dataset.source;
+    if (state.sub !== newSource) {
+      selectCategory(state.category, newSource);
+    }
+    closeAllDropdowns();
+  });
 
   // Sort card dropdown
   document.getElementById('sort-card-main').addEventListener('click', (e) => {
@@ -942,7 +1016,7 @@ async function init() {
   const options = await api('/api/options');
   if (!options.error) state.options = options;
 
-  document.getElementById('sb-version').textContent = 'v' + (state.settings.app_version || '0.0.1.alpha.1');
+  document.getElementById('sb-version').textContent = 'v' + (state.settings.app_version || '0.0.2.alpha.1');
 
   setupEvents();
   applyI18n();
