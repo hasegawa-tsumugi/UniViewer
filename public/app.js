@@ -228,8 +228,9 @@ function selectCategory(category, sub) {
   updateSourceSelect();
   renderDetail(null);
 
-  // Non-charts categories are not yet available
-  if (category !== 'charts') {
+  // Non-charts categories: check if backend supports them
+  const SUPPORTED = ['charts', 'characters'];
+  if (!SUPPORTED.includes(category)) {
     const body = document.getElementById('list-body');
     body.innerHTML = '<div class="coming-soon">' + t('comingSoon') + '</div>';
     return;
@@ -323,7 +324,16 @@ function renderItems(items) {
       const cover = document.createElement('div');
       cover.className = 'gi-cover';
       cover.style.background = colorFromId(item.id);
-      cover.textContent = thumbInitials(item);
+      if (item.defaultImages && item.source) {
+        const img = document.createElement('img');
+        img.src = '/api/chara_img/' + item.source + '/' + item.defaultImages + '/02';
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = function() { this.style.display = 'none'; };
+        cover.appendChild(img);
+      } else {
+        cover.textContent = thumbInitials(item);
+      }
       cell.appendChild(cover);
 
       const nm = document.createElement('div');
@@ -656,7 +666,8 @@ function renderCharacterDetail(item) {
         <div class="meta-row"><div class="meta-label">ID</div><div class="meta-value">${esc(item.id || '–')}</div></div>
       </div>
       <div class="cover-img" style="background:${colorFromId(item.id)};color:rgba(255,255,255,0.85)">
-        ${thumbInitials(item)}
+        ${item.defaultImages && item.source ? `<img class="cover-img-el" src="/api/chara_img/${item.source}/${item.defaultImages}/00" alt="" onerror="this.style.display='none'">` : ''}
+        <span class="cover-fallback-text">${thumbInitials(item)}</span>
       </div>
     </div>
   `;

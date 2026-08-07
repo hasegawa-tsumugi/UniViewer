@@ -318,6 +318,27 @@ class DataLoader:
         except Exception:
             return ""
 
+    def get_character_image_path(self, source, image_id, sub_idx="00"):
+        """Resolve a character image ID (e.g. chara0000_00) to a DDS file path.
+        
+        image_id format: chara{idx:04d}_{variant:02d}
+        sub_idx: 00 (large/detail), 02 (thumbnail/preview)
+        """
+        if not image_id or not image_id.startswith("chara"):
+            return ""
+        m = re.match(r"chara(\d{4})_(\d{2})", image_id)
+        if not m:
+            return ""
+        idx = int(m.group(1))
+        variant = int(m.group(2))
+        folder_id = f"{idx * 10 + variant:06d}"
+        dds_name = f"CHU_UI_Character_{idx:04d}_{variant:02d}_{sub_idx}.dds"
+        source_path = self.get_source_path(source)
+        dds_path = os.path.join(source_path, "ddsImage", f"ddsImage{folder_id}", dds_name)
+        if os.path.exists(dds_path):
+            return dds_path
+        return ""
+
     # --- Charts (Music) ---
     def get_charts(self, source):
         def parser(root):
@@ -524,6 +545,7 @@ class DataLoader:
                 "name": xstr(root, "name"),
                 "worksName": xstr(root, "works"),
                 "rareType": xval(root, "rareType"),
+                "defaultImages": xstr(root, "defaultImages"),
                 "sub": "character",
             }
         return self._load_merged("chara", "Chara.xml", parser)
@@ -749,6 +771,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         img = Image.open(dds_path)
                         # Resize to small thumbnail for fast loading (256px)
                         img.thumbnail((256, 256))
+                        img.save(cache_png, "PNG")
+                    except Exception as e:
+                        self.send_error(500, str(e).encode())
+                        return
+                self._send_file(cache_png, "image/png")
+                return
+            self.send_error(400)
+            return
+
+        # --- Character image (DDS -> PNG) ---
+        if path.startswith("/api/chara_img/"):
+            # /api/chara_img/<source>/<image_id>/<sub>
+            parts = path.split("/")
+            if len(parts) >= 5:
+                source = parts[3]
+                image_id = parts[4] if len(parts) >= 5 else ""
+                sub_idx = parts[5] if len(parts) >= 6 else "00"
+                dds_path = self.loader.get_character_image_path(source, image_id, sub_idx)
+                if not dds_path or not os.path.exists(dds_path):
+                    self.send_error(404)
+                    return
+                try:
+                    mtime = os.path.getmtime(dds_path)
+                except OSError:
+                    self.send_error(404)
+                    return
+                cache_dir = os.path.join(CACHE_DIR, "chara_images")
+                cache_png = os.path.join(cache_dir, f"{source}_{image_id}_{sub_idx}.png")
+                if not os.path.exists(cache_png) or os.path.getmtime(cache_png) < mtime:
+                    try:
+                        from PIL import Image
+                        os.makedirs(os.path.dirname(cache_png), exist_ok=True)
+                        img = Image.open(dds_path)
+                        # Resize detail view to 512px, thumbnail to 256px
+                        max_size = 512 if sub_idx == "00" else 256
+                        img.thumbnail((max_size, max_size))
                         img.save(cache_png, "PNG")
                     except Exception as e:
                         self.send_error(500, str(e).encode())
