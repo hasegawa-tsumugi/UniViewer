@@ -12,7 +12,7 @@ const state = {
   totalPages: 1,
   selectedId: null,
   selectedDetail: null,
-  settings: { game_data_path: '', language: 'zh-CN', app_version: '0.0.2.alpha.1', game_version: '' },
+  settings: { game_data_path: '', language: 'zh-CN', app_version: '0.0.2.alpha.2', game_version: '' },
   sources: [],
   options: { genres: [], releaseTags: [] },
   sortBy: 'id',
@@ -31,12 +31,13 @@ const I18N = {
     others: '其他', map: '地图', course: '段位', quest: '任务', ticket: '功能票',
     loading: '加载中...', noData: '暂无数据',
     refresh: '刷新', refreshOk: '数据已刷新', saveOk: '设置已保存', save: '保存',
+    delete: '删除', deleteConfirm: '确定要删除吗？此操作不可恢复。', importChart: '导入谱面',
     setPath: '请先在设置中配置游戏数据路径',
     browse: '浏览',
     comingSoon: '该功能正在开发中，敬请期待',
     hint: '选择一个分类以查看数据',
     empty: '从左侧选择一个项目以查看详情',
-    copyExport: '复制与导出',
+    copyExport: '编辑与导出',
     copyExportHint: '请选择 A001 以外的目录来编辑',
     basic: 'Basic', advanced: 'Advanced', expert: 'Expert', master: 'Master', ultima: 'Ultima', worldsEnd: "World's End",
     enableDiff: '启用此难度',
@@ -83,11 +84,20 @@ async function api(path, options) {
 // Navigation config
 // ============================================================
 const NAV_CONFIG = {
-  charts:       { label: 'charts', dynamicSubs: true, layout: 'list' },
+  charts:       { label: 'charts', layout: 'list', sourceSelect: true },
   characters:   { label: 'characters', layout: 'grid' },
-  avatars:      { label: 'avatars',      subs: ['face','head','body','item','back','front'], showAll: true, layout: 'grid' },
+  avatars:      { label: 'avatars', subs: ['face','head','body','item','back','front'], showAll: true, layout: 'grid' },
   collectibles: { label: 'collectibles', subs: ['trophy','nameplate','mapicon','systemvoice'], layout: 'grid' },
-  others:       { label: 'others',       subs: ['map','course','quest','ticket'], layout: 'grid' },
+  others:       { label: 'others', subs: ['map','course','quest','ticket'], layout: 'grid' },
+};
+
+// Detail renderer dispatch — maps category to render function
+const DETAIL_RENDERERS = {
+  charts:       (item) => renderChartDetail(item),
+  characters:   (item) => renderCharacterDetail(item),
+  avatars:      (item) => renderAvatarDetail(item),
+  collectibles: (item) => renderCollectibleDetail(item),
+  others:       (item) => renderOtherDetail(item),
 };
 
 // ============================================================
@@ -135,22 +145,14 @@ function updateSubNav() {
   const cfg = NAV_CONFIG[state.category];
   if (!cfg) { subNav.classList.add('hidden'); return; }
 
-  // Charts category uses the top version card for source switching — skip sub-nav
-  if (state.category === 'charts') {
+  // Charts: source selection handled by top version card, not sub-nav
+  if (cfg.sourceSelect) {
     subNav.classList.add('hidden');
     return;
   }
 
-  if (cfg.dynamicSubs && state.sources.length > 0) {
-    subNav.classList.remove('hidden');
-    for (const src of state.sources) {
-      const btn = document.createElement('button');
-      btn.className = 'sub-tab' + (state.sub === src.id ? ' active' : '');
-      btn.textContent = src.id + (src.version ? ' (' + src.version + ')' : '');
-      btn.addEventListener('click', () => selectCategory(state.category, src.id));
-      inner.appendChild(btn);
-    }
-  } else if (cfg.subs) {
+  // Static sub-navigation (avatars, collectibles, others)
+  if (cfg.subs) {
     subNav.classList.remove('hidden');
     if (cfg.showAll) {
       const btnAll = document.createElement('button');
@@ -177,7 +179,8 @@ function updateSourceSelect() {
   const card = document.getElementById('source-card');
   if (!inner || !label || !card) return;
 
-  if (state.category === 'charts') {
+  const cfg = NAV_CONFIG[state.category];
+  if (cfg && cfg.sourceSelect) {
     card.style.display = '';
     inner.innerHTML = '';
     if (!state.sources || state.sources.length === 0) {
@@ -237,11 +240,12 @@ function selectCategory(category, sub) {
   updateNav();
   updateSubNav();
   updateSourceSelect();
+  updateActionBar();
   renderDetail(null);
 
-  // Non-charts categories: check if backend supports them
-  const SUPPORTED = ['charts', 'characters'];
-  if (!SUPPORTED.includes(category)) {
+  // Check backend support via NAV_CONFIG (all categories are supported)
+  const cfg = NAV_CONFIG[category];
+  if (!cfg) {
     const body = document.getElementById('list-body');
     body.innerHTML = '<div class="coming-soon">' + t('comingSoon') + '</div>';
     return;
@@ -483,7 +487,15 @@ function selectItem(item) {
   document.querySelectorAll('.list-item, .grid-item').forEach((el) => {
     el.classList.toggle('selected', el.dataset.id === item.id);
   });
+  updateActionBar();
   renderDetail(item);
+}
+
+function updateActionBar() {
+  const bar = document.getElementById('chart-action-bar');
+  if (!bar) return;
+  const show = state.category === 'charts' && !!state.selectedDetail;
+  bar.classList.toggle('hidden', !show);
 }
 
 // ============================================================
@@ -498,17 +510,9 @@ function renderDetail(item) {
   }
   pane.className = 'detail-body';
 
-  if (state.category === 'charts') {
-    pane.innerHTML = renderChartDetail(item);
-  } else if (state.category === 'characters') {
-    pane.innerHTML = renderCharacterDetail(item);
-  } else if (state.category === 'avatars') {
-    pane.innerHTML = renderAvatarDetail(item);
-  } else if (state.category === 'collectibles') {
-    pane.innerHTML = renderCollectibleDetail(item);
-  } else if (state.category === 'others') {
-    pane.innerHTML = renderOtherDetail(item);
-  }
+  // Dispatch through DETAIL_RENDERERS lookup table
+  const renderer = DETAIL_RENDERERS[state.category];
+  pane.innerHTML = renderer ? renderer(item) : '';
 }
 
 function renderChartDetail(item) {
@@ -617,9 +621,6 @@ function renderChartDetail(item) {
     </div>
     <div class="diff-tabs">${tabsHtml}</div>
     ${panelsHtml}
-    <div class="save-bar">
-      <button class="btn-save" id="btn-save-chart">${t('save')}</button>
-    </div>
   `;
 }
 
@@ -701,6 +702,45 @@ async function saveCharacter() {
   }
 }
 
+async function editMusicXml() {
+  closeAllDropdowns();
+  const item = state.selectedDetail;
+  if (!item) return;
+  console.log('[editMusicXml]', item.source, item.id);
+  const result = await api(`/api/music/open-xml?source=${encodeURIComponent(item.source)}&music_id=${encodeURIComponent(item.id)}`);
+  console.log('[editMusicXml] result', result);
+  if (result.error) showToast(result.error);
+  else if (result.path) showToast('已打开: ' + result.path);
+}
+window.editMusicXml = editMusicXml;
+
+async function openMusicFolder() {
+  closeAllDropdowns();
+  const item = state.selectedDetail;
+  if (!item) return;
+  console.log('[openMusicFolder]', item.source, item.id);
+  const result = await api(`/api/music/open-folder?source=${encodeURIComponent(item.source)}&music_id=${encodeURIComponent(item.id)}`);
+  console.log('[openMusicFolder] result', result);
+  if (result.error) showToast(result.error);
+  else if (result.path) showToast('已打开: ' + result.path);
+}
+window.openMusicFolder = openMusicFolder;
+
+async function exportMusicZip() {
+  const item = state.selectedDetail;
+  if (!item) return;
+  console.log('[exportMusicZip]', item.source, item.id);
+  showToast('正在打包...');
+  const result = await api(`/api/music/export-zip?source=${encodeURIComponent(item.source)}&music_id=${encodeURIComponent(item.id)}`);
+  console.log('[exportMusicZip] result', result);
+  if (result.error) {
+    showToast(result.error);
+  } else {
+    showToast('已导出: ' + (result.path || item.id + '.zip'));
+  }
+}
+window.exportMusicZip = exportMusicZip;
+
 function renderCharacterDetail(item) {
   return `
     <div class="detail-top">
@@ -778,6 +818,20 @@ document.addEventListener('click', (e) => {
     saveChart();
     return;
   }
+  if (e.target.id === 'btn-delete-chart') {
+    if (confirm(t('deleteConfirm'))) {
+      showToast(t('delete') + ' — TODO');
+    }
+    return;
+  }
+  if (e.target.id === 'btn-import-chart') {
+    showToast(t('importChart') + ' — TODO');
+    return;
+  }
+  if (e.target.id === 'btn-import-chart-caret') {
+    showToast(t('importChart') + ' — TODO');
+    return;
+  }
   if (e.target.id === 'btn-save-chara') {
     saveCharacter();
     return;
@@ -828,17 +882,16 @@ function setupEvents() {
       const cat = btn.dataset.cat;
       const cfg = NAV_CONFIG[cat];
       if (!cfg) return;
-      if (cfg.dynamicSubs && state.sources.length > 0) {
-        selectCategory(cat, state.sub && state.sources.find(s => s.id === state.sub) ? state.sub : state.sources[0].id);
+
+      // Determine default sub for this category
+      let sub = null;
+      if (cfg.sourceSelect && state.sources.length > 0) {
+        sub = (state.sub && state.sources.find(s => s.id === state.sub)) ? state.sub : state.sources[0].id;
       } else if (cfg.subs) {
-        if (cfg.showAll) {
-          selectCategory(cat, state.sub && cfg.subs.includes(state.sub) ? state.sub : null);
-        } else {
-          selectCategory(cat, state.sub && cfg.subs.includes(state.sub) ? state.sub : cfg.subs[0]);
-        }
-      } else {
-        selectCategory(cat, null);
+        sub = (state.sub && cfg.subs.includes(state.sub)) ? state.sub : (cfg.showAll ? null : cfg.subs[0]);
       }
+
+      selectCategory(cat, sub);
     });
   });
 
@@ -889,6 +942,20 @@ function setupEvents() {
       }
     });
   });
+
+  // Copy/Export dropdown
+  document.getElementById('copy-export-main').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown('copy-export-card', 'copy-export-dropdown');
+  });
+
+  // Copy/Export action buttons (direct listener, no delegation)
+  const btnEditXml = document.getElementById('btn-edit-xml');
+  const btnOpenFolder = document.getElementById('btn-open-folder');
+  const btnExportZip = document.getElementById('btn-export-zip');
+  if (btnEditXml) btnEditXml.addEventListener('click', (e) => { e.stopPropagation(); editMusicXml(); });
+  if (btnOpenFolder) btnOpenFolder.addEventListener('click', (e) => { e.stopPropagation(); openMusicFolder(); });
+  if (btnExportZip) btnExportZip.addEventListener('click', (e) => { e.stopPropagation(); exportMusicZip(); });
 
   // Close dropdowns when clicking outside
   document.addEventListener('click', () => {
@@ -1016,7 +1083,7 @@ async function init() {
   const options = await api('/api/options');
   if (!options.error) state.options = options;
 
-  document.getElementById('sb-version').textContent = 'v' + (state.settings.app_version || '0.0.2.alpha.1');
+  document.getElementById('sb-version').textContent = 'v' + (state.settings.app_version || '0.0.2.alpha.2');
 
   setupEvents();
   applyI18n();

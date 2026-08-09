@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>UniViewer</title>
-  <link rel="stylesheet" href="/style.css?v=22">
+  <link rel="stylesheet" href="/style.css?v=31">
 </head>
 <body>
   <div id="app">
@@ -44,8 +44,9 @@
       <div class="sb-version" id="sb-version">v0.0.2.alpha.1</div>
     </aside>
 
-    <!-- List column (left of detail) -->
-    <section id="list-pane">
+<!-- Main content (list + detail) -->
+    <div id="main">
+      <!-- Unified top bar spans both panes -->
       <header id="list-header">
         <div class="lh-left">
           <div class="hdr-card" id="source-card">
@@ -57,8 +58,6 @@
               <div class="hdr-card-dropdown-inner" id="source-dropdown-inner"></div>
             </div>
           </div>
-        </div>
-        <div class="lh-right">
           <div class="hdr-card" id="sort-card">
             <div class="hdr-card-main" id="sort-card-main">
               <span class="hdr-card-sort" id="sort-card-label">ID</span>
@@ -73,23 +72,47 @@
             </div>
           </div>
         </div>
+        <div class="lh-right chart-action-bar hidden" id="chart-action-bar">
+          <div class="hdr-card" id="copy-export-card">
+            <div class="hdr-card-main" id="copy-export-main">
+              <span class="hdr-card-sort">编辑与导出</span>
+              <svg class="hdr-card-caret" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+            </div>
+            <div class="hdr-card-dropdown hidden" id="copy-export-dropdown">
+              <div class="hdr-card-dropdown-inner">
+                <button class="hdr-dropdown-item" id="btn-edit-xml">编辑Music.xml</button>
+                <button class="hdr-dropdown-item" id="btn-open-folder">打开文件夹</button>
+                <button class="hdr-dropdown-item" id="btn-export-zip">导出为Zip</button>
+              </div>
+            </div>
+          </div>
+          <button class="btn-pill btn-pill-danger btn-pill-sm" id="btn-delete-chart" data-i18n="delete">删除</button>
+          <button class="btn-pill btn-pill-primary btn-pill-sm" id="btn-save-chart" data-i18n="save">保存</button>
+          <div class="btn-pill-group">
+            <button class="btn-pill btn-pill-ghost btn-pill-sm" id="btn-import-chart" data-i18n="importChart">导入谱面</button>
+            <button class="btn-pill btn-pill-ghost btn-pill-sm btn-pill-caret" id="btn-import-chart-caret"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg></button>
+          </div>
+        </div>
       </header>
 
-      <div id="sub-nav" class="sub-nav hidden">
-        <div class="sub-nav-inner" id="sub-nav-inner"></div>
-      </div>
+      <!-- List column (left of detail) -->
+      <section id="list-pane">
+        <div id="sub-nav" class="sub-nav hidden">
+          <div class="sub-nav-inner" id="sub-nav-inner"></div>
+        </div>
 
-      <div id="list-body" class="list-body">
-        <div class="loading">加载中...</div>
-      </div>
-    </section>
+        <div id="list-body" class="list-body">
+          <div class="loading">加载中...</div>
+        </div>
+      </section>
 
-    <!-- Detail pane (right) -->
-    <section id="detail-pane">
-      <div id="detail-content" class="detail-empty">
-        <div class="empty-hint">从左侧选择一个项目以查看详情</div>
-      </div>
-    </section>
+      <!-- Detail pane (right) -->
+      <section id="detail-pane">
+        <div id="detail-content" class="detail-empty">
+          <div class="empty-hint">从左侧选择一个项目以查看详情</div>
+        </div>
+      </section>
+    </div>
   </div>
 
   <!-- Settings Modal -->
@@ -140,6 +163,6 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <script src="/app.js?v=21"></script>
+  <script src="/app.js?v=38"></script>
 </body>
 </html>

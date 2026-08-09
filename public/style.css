@@ -120,10 +120,25 @@ body::after {
 
 #app {
   display: grid;
-  grid-template-columns: var(--sidebar-w) var(--list-w) 1fr;
+  grid-template-columns: var(--sidebar-w) 1fr;
   height: 100vh;
   background: transparent;
 }
+
+/* Main content area (wraps list-pane + detail-pane with unified top bar) */
+#main {
+  display: grid;
+  grid-template-columns: var(--list-w) 1fr;
+  grid-template-rows: var(--topbar-h) 1fr;
+  grid-template-areas:
+    "header header"
+    "list detail";
+  min-width: 0;
+  overflow: hidden;
+}
+#main #list-header { grid-area: header; }
+#main #list-pane { grid-area: list; }
+#main #detail-pane { grid-area: detail; }
 
 /* ============================================================
    LIQUID GLASS UTILITY — specular highlight overlay
@@ -263,7 +278,7 @@ body::after {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px 16px;
   gap: 8px;
   flex-shrink: 0;
   background: rgba(24, 24, 26, 0.25);
@@ -271,6 +286,7 @@ body::after {
   -webkit-backdrop-filter: var(--lg-blur-strong);
   position: relative;
   z-index: 10;
+  justify-content: space-between;
 }
 
 .lh-left { display: flex; gap: 6px; align-items: center; flex: 1; min-width: 0; }
@@ -333,12 +349,14 @@ body::after {
 }
 .hdr-card-id { color: var(--text-main); font-weight: 500; }
 .hdr-card-ver { color: var(--text-secondary); font-size: 11px; }
-.hdr-card-sort { color: var(--text-main); font-size: 12px; }
+.hdr-card-sort { color: var(--text-main); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .hdr-card-caret {
   width: 14px;
   height: 14px;
   color: var(--text-dim);
   transition: transform 0.2s ease;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .hdr-card.open .hdr-card-caret { transform: rotate(180deg); color: var(--accent); }
 
@@ -1020,8 +1038,10 @@ select.meta-input { cursor: pointer; }
 /* Save bar */
 .save-bar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
+  gap: 8px;
   padding-top: 4px;
+  flex-wrap: wrap;
 }
 .btn-save {
   background: rgba(255, 55, 95, 0.82);
@@ -1049,6 +1069,101 @@ select.meta-input { cursor: pointer; }
     inset 0 -1px 1px rgba(0, 0, 0, 0.1);
 }
 .btn-save:active { transform: scale(0.98); }
+
+/* Chart action bar (in top header, right side) */
+.chart-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.chart-action-bar.hidden { opacity: 0; pointer-events: none; }
+
+/* Pill buttons (action bar) */
+.btn-pill {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 7px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  font-family: inherit;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--lg-shadow-sm);
+}
+.btn-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+  box-shadow: var(--lg-shadow);
+}
+.btn-pill:active { transform: scale(0.98); }
+.btn-pill-primary {
+  background: rgba(255, 55, 95, 0.85);
+  color: white;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.btn-pill-primary:hover {
+  background: rgba(255, 45, 85, 0.95);
+  box-shadow:
+    0 4px 16px rgba(255, 55, 95, 0.3),
+    inset 0 1px 1px rgba(255, 255, 255, 0.25);
+}
+.btn-pill-danger {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ff6b8a;
+  border-color: rgba(255, 107, 138, 0.3);
+}
+.btn-pill-danger:hover {
+  background: rgba(255, 107, 138, 0.18);
+  color: #fff;
+  border-color: rgba(255, 107, 138, 0.5);
+}
+.btn-pill-ghost {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+}
+.btn-pill-group {
+  display: inline-flex;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  box-shadow: var(--lg-shadow-sm);
+}
+.btn-pill-group .btn-pill {
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border-right: none;
+}
+.btn-pill-group .btn-pill:last-child {
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+}
+.btn-pill-group .btn-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.btn-pill-caret {
+  padding: 7px 10px;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-pill-caret svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.7;
+}
+.btn-pill-sm {
+  padding: 5px 14px;
+  font-size: 11px;
+}
+.btn-pill-group .btn-pill-sm {
+  padding: 5px 14px;
+}
+.btn-pill-group .btn-pill-sm.btn-pill-caret {
+  padding: 5px 8px;
+}
 
 /* Audio bar */
 .audio-bar {

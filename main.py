@@ -2,7 +2,7 @@
 """
 UniViewer - CHUNITHM Data Browser
 Native desktop application using pywebview + Python HTTP server
-Version: 0.0.2.alpha.1
+Version: 0.0.2.alpha.2
 """
 
 import os
@@ -10,6 +10,9 @@ import sys
 import json
 import re
 import threading
+import subprocess
+import zipfile
+import urllib.parse
 import http.server
 import urllib.parse
 import xml.etree.ElementTree as ET
@@ -18,7 +21,7 @@ import xml.etree.ElementTree as ET
 # Constants
 # ============================================================
 APP_NAME = "UniViewer"
-APP_VERSION = "0.0.2.alpha.1"
+APP_VERSION = "0.0.2.alpha.2"
 DEFAULT_GAME_PATH = r"D:\SDHD_2.50"
 
 # When running as a PyInstaller bundle, sys._MEIPASS points to the
@@ -32,42 +35,83 @@ else:
     _EXE_DIR = _BUNDLE_DIR
 
 CONFIG_PATH = os.path.join(_EXE_DIR, "config.json")
-PUBLIC_DIR = os.path.join(_BUNDLE_DIR, "public")
+# Compute PUBLIC_DIR lazily to handle frozen vs source correctly
+def _compute_public_dir():
+    """Find the public/ directory containing index.html."""
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        candidates = [
+            os.path.join(exe_dir, "_internal", "public"),
+            os.path.join(exe_dir, "public"),
+        ]
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.join(script_dir, "public"),
+            os.path.join(script_dir, "_internal", "public"),
+        ]
+    for d in candidates:
+        if os.path.isfile(os.path.join(d, "index.html")):
+            return d
+    return candidates[0]
+
+_PUBLIC_DIR = None
+def get_public_dir():
+    global _PUBLIC_DIR
+    if _PUBLIC_DIR is None:
+        _PUBLIC_DIR = _compute_public_dir()
+    return _PUBLIC_DIR
 CACHE_DIR = os.path.join(_EXE_DIR, ".cache")
 HOST = "127.0.0.1"
 PORT = 17890
 
-# Avatar accessory type prefix mapping (matches frontend sub keys)
-AVATAR_PREFIX = {
-    "face": "01",
-    "head": "02",
-    "body": "03",
-    "item": "04",
-    "back": "06",
-    "front": "08",
-}
-
 DIFF_NAMES = {1: "BASIC", 2: "ADVANCED", 3: "EXPERT", 4: "MASTER", 5: "ULTIMA"}
 DIFF_TYPE_MAP = {"BASIC": 1, "ADVANCED": 2, "EXPERT": 3, "MASTER": 4, "ULTIMA": 5, "WORLD'S END": 6}
 
-# Version name lookup is built dynamically from releaseTag XMLs (titleName field).
-# See DataLoader._build_release_tag_map().
-
-# Collectible category mapping: sub_key -> (dir_name, xml_filename)
-COLLECTIBLE_MAP = {
-    "trophy":       ("trophy",      "Trophy.xml"),
-    "nameplate":    ("namePlate",   "NamePlate.xml"),
-    "mapicon":      ("mapIcon",     "MapIcon.xml"),
-    "systemvoice":  ("systemVoice", "SystemVoice.xml"),
+# Unified category registry — single source of truth for all data types.
+# Each category defines how to load its data and what sub-types exist.
+CATEGORY_REGISTRY = {
+    "charts": {
+        "dir": "music",
+        "xml": "Music.xml",
+    },
+    "characters": {
+        "dir": "chara",
+        "xml": "Chara.xml",
+    },
+    "avatars": {
+        "dir": "avatarAccessory",
+        "xml": "AvatarAccessory.xml",
+        "subs": {  # sub_key → directory prefix suffix
+            "face":  "01", "head":  "02", "body":  "03",
+            "item":  "04", "back":  "06", "front": "08",
+        },
+    },
+    "collectibles": {
+        # dir/xml vary per sub, stored in subs mapping
+        "subs": {
+            "trophy":      ("trophy",      "Trophy.xml"),
+            "nameplate":   ("namePlate",   "NamePlate.xml"),
+            "mapicon":     ("mapIcon",     "MapIcon.xml"),
+            "systemvoice": ("systemVoice", "SystemVoice.xml"),
+        },
+    },
+    "others": {
+        "subs": {
+            "map":    ("map",    "Map.xml"),
+            "course": ("course", "Course.xml"),
+            "quest":  ("quest",  "Quest.xml"),
+            "ticket": ("ticket", "Ticket.xml"),
+        },
+    },
 }
-
-# Other category mapping: sub_key -> (dir_name, xml_filename)
-OTHER_MAP = {
-    "map":    ("map",    "Map.xml"),
-    "course": ("course", "Course.xml"),
-    "quest":  ("quest",  "Quest.xml"),
-    "ticket": ("ticket", "Ticket.xml"),
-}
+# Flatten all known directory names for source detection
+_ALL_DATA_DIRS = set()
+for _cat_cfg in CATEGORY_REGISTRY.values():
+    if _cat_cfg.get("dir"):
+        _ALL_DATA_DIRS.add(_cat_cfg["dir"])
+    for _sub_data in _cat_cfg.get("subs", {}).values():
+        _ALL_DATA_DIRS.add(_sub_data[0] if isinstance(_sub_data, tuple) else _sub_data)
 
 
 # ============================================================
@@ -201,10 +245,7 @@ class DataLoader:
             for d in sorted(os.listdir(option_dir)):
                 dpath = os.path.join(option_dir, d)
                 if d.startswith("A") and os.path.isdir(dpath):
-                    if any(os.path.isdir(os.path.join(dpath, sub)) for sub in
-                           ("music", "chara", "map", "course", "quest", "ticket",
-                            "avatarAccessory", "trophy", "namePlate", "mapIcon",
-                            "systemVoice")):
+                    if any(os.path.isdir(os.path.join(dpath, sub)) for sub in _ALL_DATA_DIRS):
                         sources.append((d, self._read_conf_version(dpath)))
         return sources
 
@@ -573,62 +614,124 @@ class DataLoader:
         except Exception as e:
             return {"error": str(e)}
 
-    # --- Characters ---
-    def get_characters(self):
-        def parser(root):
-            return {
-                "name": xstr(root, "name"),
-                "sortName": xval(root, "sortName"),
-                "worksName": xstr(root, "works"),
-                "illustratorName": xstr(root, "illustratorName"),
-                "releaseTagName": xstr(root, "releaseTagName"),
-                "rareType": xval(root, "rareType"),
-                "defaultImages": xstr(root, "defaultImages"),
-                "sub": "character",
-            }
-        return self._load_merged("chara", "Chara.xml", parser)
+    # --- Unified data loader for non-charts categories ---
+    def get_data(self, category, sub=None):
+        """Unified data loader — dispatches by category config."""
+        cfg = CATEGORY_REGISTRY.get(category)
+        if not cfg:
+            return []
 
-    # --- Avatars ---
-    def get_avatars(self, sub):
-        if sub and sub in AVATAR_PREFIX:
-            prefix = f"avatarAccessory{AVATAR_PREFIX[sub]}"
-            actual_sub = sub
-        else:
-            prefix = None  # Load all types
+        # --- Avatars: sub maps to directory prefix ---
+        if category == "avatars":
+            prefix = None
             actual_sub = "all"
-        def parser(root):
-            return {
-                "name": xstr(root, "name"),
-                "type": xstr(root, "category") or "all",
-                "sub": actual_sub,
-            }
-        return self._load_merged("avatarAccessory", "AvatarAccessory.xml", parser, prefix=prefix)
+            if sub and sub in cfg.get("subs", {}):
+                prefix = f"{cfg['dir']}{cfg['subs'][sub]}"
+                actual_sub = sub
+            def parser(root):
+                return {
+                    "name": xstr(root, "name"),
+                    "type": xstr(root, "category") or "all",
+                    "sub": actual_sub,
+                }
+            return self._load_merged(cfg["dir"], cfg["xml"], parser, prefix=prefix)
 
-    # --- Collectibles ---
-    def get_collectibles(self, sub):
-        if sub not in COLLECTIBLE_MAP:
-            return []
-        category, xml_file = COLLECTIBLE_MAP[sub]
-        def parser(root):
-            return {
-                "name": xstr(root, "name"),
-                "rareType": xval(root, "rareType"),
-                "sub": sub,
-            }
-        return self._load_merged(category, xml_file, parser)
+        # --- Collectibles / Others: sub selects dir+xml pair ---
+        if "subs" in cfg and sub and sub in cfg["subs"]:
+            dir_name, xml_file = cfg["subs"][sub]
+            def parser(root):
+                return {
+                    "name": xstr(root, "name"),
+                    "rareType": xval(root, "rareType"),
+                    "sub": sub,
+                }
+            return self._load_merged(dir_name, xml_file, parser)
 
-    # --- Others ---
-    def get_others(self, sub):
-        if sub not in OTHER_MAP:
-            return []
-        category, xml_file = OTHER_MAP[sub]
-        def parser(root):
-            return {
-                "name": xstr(root, "name"),
-                "rareType": xval(root, "rareType"),
-                "sub": sub,
-            }
-        return self._load_merged(category, xml_file, parser)
+        # --- Characters: simple merged load with fixed parser ---
+        if category == "characters":
+            def parser(root):
+                return {
+                    "name": xstr(root, "name"),
+                    "sortName": xval(root, "sortName"),
+                    "worksName": xstr(root, "works"),
+                    "illustratorName": xstr(root, "illustratorName"),
+                    "releaseTagName": xstr(root, "releaseTagName"),
+                    "rareType": xval(root, "rareType"),
+                    "defaultImages": xstr(root, "defaultImages"),
+                    "sub": "character",
+                }
+            return self._load_merged(cfg["dir"], cfg["xml"], parser)
+
+        # --- Generic fallback for simple categories ---
+        if cfg.get("dir") and cfg.get("xml"):
+            def parser(root):
+                return {
+                    "name": xstr(root, "name"),
+                    "rareType": xval(root, "rareType"),
+                }
+            return self._load_merged(cfg["dir"], cfg["xml"], parser)
+
+        return []
+
+    # --- Music File Operations ---
+    def open_music_xml(self, source, music_id):
+        source_path = self.get_source_path(source)
+        music_dir = os.path.join(source_path, "music", music_id)
+        xml_path = os.path.join(music_dir, "Music.xml")
+        if not os.path.exists(xml_path):
+            return {"error": "Music.xml not found: " + xml_path}
+        try:
+            subprocess.Popen(['start', '', xml_path], shell=True)
+            return {"status": "ok", "path": xml_path}
+        except Exception as e:
+            try:
+                os.startfile(xml_path)
+                return {"status": "ok", "path": xml_path}
+            except Exception as e2:
+                return {"error": str(e2)}
+
+    def open_music_folder(self, source, music_id):
+        source_path = self.get_source_path(source)
+        music_dir = os.path.join(source_path, "music", music_id)
+        if not os.path.exists(music_dir):
+            return {"error": "Folder not found: " + music_dir}
+        try:
+            subprocess.Popen(['explorer', music_dir])
+            return {"status": "ok", "path": music_dir}
+        except Exception as e:
+            try:
+                os.startfile(music_dir)
+                return {"status": "ok", "path": music_dir}
+            except Exception as e2:
+                return {"error": str(e2)}
+
+    def export_music_zip(self, source, music_id):
+        source_path = self.get_source_path(source)
+        m = re.match(r'music(\d+)', music_id)
+        num_id = m.group(1) if m else music_id.lstrip('music')
+        music_dir = os.path.join(source_path, "music", music_id)
+        cue_dir = os.path.join(source_path, "cueFile", f"cueFile00{num_id}")
+        if not os.path.exists(music_dir) and not os.path.exists(cue_dir):
+            return {"error": "No data found for " + music_id}
+        try:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+            zip_path = os.path.join(desktop, f"{num_id}.zip")
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                if os.path.exists(cue_dir):
+                    cue_prefix = f"{num_id}/cueFile/cueFile00{num_id}"
+                    for root, dirs, files in os.walk(cue_dir):
+                        for file in files:
+                            zf.write(os.path.join(root, file), f"{cue_prefix}/{file}")
+                if os.path.exists(music_dir):
+                    music_prefix = f"{num_id}/music/{music_id}"
+                    for root, dirs, files in os.walk(music_dir):
+                        for file in files:
+                            if file == "test_out.png":
+                                continue
+                            zf.write(os.path.join(root, file), f"{music_prefix}/{file}")
+            return {"status": "ok", "path": zip_path}
+        except Exception as e:
+            return {"error": str(e)}
 
     # --- Game Version ---
     def get_game_version(self):
@@ -756,32 +859,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._paginate(items, qs)
             return
 
-        if path == "/api/data/characters":
-            items = self.loader.get_characters()
-            self._paginate(items, qs)
-            return
-
-        if path == "/api/data/avatars":
+        # Generic data endpoint: /api/data/{category} → CATEGORY_REGISTRY categories
+        if path.startswith("/api/data/") and path != "/api/data/charts":
+            category = path.split("/")[3]
+            if category not in CATEGORY_REGISTRY:
+                self.send_error(404)
+                return
             sub = qs.get("sub", [None])[0]
             if sub == "null" or sub == "":
                 sub = None
-            items = self.loader.get_avatars(sub)
-            self._paginate(items, qs)
-            return
-
-        if path == "/api/data/collectibles":
-            sub = qs.get("sub", [None])[0]
-            if not sub or sub == "null":
-                sub = list(COLLECTIBLE_MAP.keys())[0]
-            items = self.loader.get_collectibles(sub)
-            self._paginate(items, qs)
-            return
-
-        if path == "/api/data/others":
-            sub = qs.get("sub", [None])[0]
-            if not sub or sub == "null":
-                sub = list(OTHER_MAP.keys())[0]
-            items = self.loader.get_others(sub)
+            if not sub and "subs" in CATEGORY_REGISTRY[category]:
+                sub = next(iter(CATEGORY_REGISTRY[category]["subs"]))
+            items = self.loader.get_data(category, sub)
             self._paginate(items, qs)
             return
 
@@ -859,18 +948,48 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         # --- Static files ---
         if path == "/" or path == "/index.html":
-            self._send_file(os.path.join(PUBLIC_DIR, "index.html"), "text/html; charset=utf-8")
+            self._send_file(os.path.join(get_public_dir(), "index.html"), "text/html; charset=utf-8")
             return
 
         if path == "/style.css":
-            self._send_file(os.path.join(PUBLIC_DIR, "style.css"), "text/css; charset=utf-8")
+            self._send_file(os.path.join(get_public_dir(), "style.css"), "text/css; charset=utf-8")
             return
 
         if path == "/app.js":
-            self._send_file(os.path.join(PUBLIC_DIR, "app.js"), "application/javascript; charset=utf-8")
+            self._send_file(os.path.join(get_public_dir(), "app.js"), "application/javascript; charset=utf-8")
             return
 
-        self.send_error(404)
+        # --- Music file operations ---
+        if path == "/api/music/open-xml":
+            src = qs.get("source", [""])[0]
+            mid = qs.get("music_id", [""])[0]
+            if src and mid:
+                result = self.loader.open_music_xml(src, mid)
+                self._send_json(result, 200 if "status" in result else 400)
+                return
+            self._send_json({"error": "Missing source or music_id"}, 400)
+            return
+        if path == "/api/music/open-folder":
+            src = qs.get("source", [""])[0]
+            mid = qs.get("music_id", [""])[0]
+            if src and mid:
+                result = self.loader.open_music_folder(src, mid)
+                self._send_json(result, 200 if "status" in result else 400)
+                return
+            self._send_json({"error": "Missing source or music_id"}, 400)
+            return
+        if path == "/api/music/export-zip":
+            src = qs.get("source", [""])[0]
+            mid = qs.get("music_id", [""])[0]
+            if src and mid:
+                result = self.loader.export_music_zip(src, mid)
+                self._send_json(result, 200 if "status" in result else 400)
+                return
+            self._send_json({"error": "Missing source or music_id"}, 400)
+            return
+
+        # Fallback: serve index.html for any unmatched GET (SPA routing)
+        self._send_file(os.path.join(get_public_dir(), "index.html"), "text/html; charset=utf-8")
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
